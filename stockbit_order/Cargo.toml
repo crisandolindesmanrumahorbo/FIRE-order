@@ -1,0 +1,13 @@
+[package]
+name = "stockbit-order-ws"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+base64 = "0.22.1"
+jsonwebtoken = "9.3.1"
+rsa = "0.9.7"
+sha1 = "0.10.6"
+serde = "1.0.218"
+dotenvy = "0.15.7"
+auth_validate = { path = "../shared/auth_validate" }

@@ -11,6 +11,7 @@ use std::{
     io::{Read, Write},
 };
 use stockbit_order_ws::ThreadPool;
+use auth_validate::jwt::verify_jwt;
 
 #[derive(Serialize, Deserialize, Debug)]
 struct User {
@@ -122,20 +123,20 @@ fn handle_websocket(request: &str) -> Option<String> {
     }
 }
 
-fn verify_jwt(token: &str) -> Result<String, &'static str> {
-    let public_key = get_public_key();
+// fn verify_jwt(token: &str) -> Result<String, &'static str> {
+//     let public_key = get_public_key();
 
-    let mut validation = Validation::new(Algorithm::RS256);
-    validation.validate_exp = true; // Ensure expiration is checked
-    validation.validate_aud = false; // Disable audience check (optional)
+//     let mut validation = Validation::new(Algorithm::RS256);
+//     validation.validate_exp = true; // Ensure expiration is checked
+//     validation.validate_aud = false; // Disable audience check (optional)
 
-    let token_data = decode::<Claims>(token, &public_key, &validation).map_err(|e| {
-        println!("JWT error: {:?}", e); // Debugging
-        "Invalid token"
-    })?;
+//     let token_data = decode::<Claims>(token, &public_key, &validation).map_err(|e| {
+//         println!("JWT error: {:?}", e); // Debugging
+//         "Invalid token"
+//     })?;
 
-    Ok(token_data.claims.sub)
-}
+//     Ok(token_data.claims.sub)
+// }
 
 // Extract "Sec-WebSocket-Key" from client request
 fn extract_key(request: &str) -> String {

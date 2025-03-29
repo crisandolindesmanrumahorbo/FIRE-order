@@ -3,6 +3,15 @@
 version = 4
 
 [[package]]
+name = "auth_validate"
+version = "0.1.0"
+dependencies = [
+ "dotenvy",
+ "jsonwebtoken",
+ "serde",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -513,6 +522,7 @@ dependencies = [
 name = "stockbit-order-ws"
 version = "0.1.0"
 dependencies = [
+ "auth_validate",
  "base64",
  "dotenvy",
  "jsonwebtoken",

@@ -1,0 +1,9 @@
+[package]
+name = "auth_validate"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+dotenvy = "0.15.7"
+jsonwebtoken = "9.3.1"
+serde = "1.0.218"
