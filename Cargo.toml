@@ -1,3 +1,3 @@
 [workspace]
 resolver = "2"
-members = ["shared/auth_validate", "stockbit_order"]
+members = ["shared/auth_validate", "shared/thread_pool", "stockbit_order", "shared/thread_pool"]

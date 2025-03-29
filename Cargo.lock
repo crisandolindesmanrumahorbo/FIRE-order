@@ -529,6 +529,7 @@ dependencies = [
  "rsa",
  "serde",
  "sha1",
+ "thread_pool",
 ]
 
 [[package]]
@@ -567,6 +568,10 @@ dependencies = [
  "quote",
  "syn",
 ]
+
+[[package]]
+name = "thread_pool"
+version = "0.1.0"
 
 [[package]]
 name = "time"
