@@ -142,7 +142,6 @@ fn parse_websocket_framev2(buffer: &[u8]) -> Option<String> {
         return None; // Not enough data for a valid frame
     }
 
-    let fin = (buffer[0] & 0b10000000) != 0; // FIN bit
     let opcode = buffer[0] & 0b00001111; // Extract opcode
 
     let masked = (buffer[1] & 0b10000000) != 0; // Mask bit
