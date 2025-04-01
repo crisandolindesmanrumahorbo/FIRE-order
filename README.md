@@ -1,0 +1,1 @@
+Enable the logging with ``RUST_LOG=info cargo run``
