@@ -1,32 +1,32 @@
+use crate::constant::{LOGGING_HANDSHAKE, LOGGING_MESSAGE, NOT_FOUND, UNAUTHORIZED};
+use crate::logging::thread_logging;
 use auth_validate::jwt::verify_jwt;
 use base64::Engine;
 use base64::engine::general_purpose;
 use sha1::{Digest, Sha1};
-use std::net::TcpStream;
-use std::{
-    collections::HashMap,
-    io::{Read, Write},
-};
-use crate::constant::{NOT_FOUND, UNAUTHORIZED};
+use std::collections::HashMap;
+use std::error::Error;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
 
-pub fn handle_websocket(request: &str, stream: &mut TcpStream) {
+pub async fn handle_websocket(request: &str, stream: &mut TcpStream) -> Result<(), Box<dyn Error>> {
     if !request.contains("Upgrade: websocket") {
         stream
             .write_all(
                 format!("{}{}", NOT_FOUND.to_string(), "404 Not Found".to_string()).as_bytes(),
             )
-            .unwrap();
-        return;
+            .await?;
     }
     if let Some(response) = handle_handshake(&request) {
-        stream.write_all(response.as_bytes()).unwrap();
-        stream.flush().unwrap();
-        println!("WebSocket handshake successful!");
+        stream.write_all(response.as_bytes()).await?;
+        stream.flush().await?;
+        thread_logging(LOGGING_HANDSHAKE);
         // Start handling WebSocket messages
-        handle_message(stream);
+        handle_message(stream).await;
 
         println!("Closing connection...");
-        stream.shutdown(std::net::Shutdown::Both).ok();
+        let _ = stream.shutdown().await;
+        Ok(())
     } else {
         println!("WebSocket handshake failed!");
         stream
@@ -38,7 +38,8 @@ pub fn handle_websocket(request: &str, stream: &mut TcpStream) {
                 )
                 .as_bytes(),
             )
-            .unwrap();
+            .await?;
+        Ok(())
     }
 }
 
@@ -105,29 +106,24 @@ fn generate_accept_key(key: &str) -> String {
 }
 
 // WebSocket message handling loop (Echo messages)
-fn handle_message(stream: &mut TcpStream) {
-    let mut buffer = [0; 1024];
-
+async fn handle_message(stream: &mut TcpStream) {
     loop {
-        match stream.read(&mut buffer) {
-            Ok(0) => {
+        thread_logging(LOGGING_MESSAGE);
+        let mut buffer = [0; 1024];
+        if let Ok(bytes_read) = stream.read(&mut buffer).await {
+            if bytes_read == 0 {
                 println!("Client disconnected");
                 break;
             }
-            Ok(size) => {
-                if let Some(message) = parse_websocket_framev2(&buffer[..size]) {
-                    println!("Received WebSocket message: {}", message);
 
-                    let response = format!("Echo: {}", message);
-                    let frame = create_websocket_frame(&response);
-                    stream.write_all(&frame).unwrap();
-                } else {
-                    println!("WebSocket connection closing...");
-                    break;
-                }
-            }
-            Err(_) => {
-                println!("Connection error");
+            if let Some(message) = parse_websocket_framev2(&buffer[..bytes_read]) {
+                println!("Received WebSocket message: {}", message);
+
+                let response = format!("Echo: {}", message);
+                let frame: Vec<u8> = create_websocket_frame(&response);
+                stream.write_all(&frame).await.unwrap();
+            } else {
+                println!("WebSocket connection closing...");
                 break;
             }
         }
