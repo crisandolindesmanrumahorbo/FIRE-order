@@ -28,12 +28,10 @@ impl Server {
         let request = match Request::new(reader).await {
             Ok(req) => req,
             Err(err) => {
-                return Ok(stream
-                    .write_all(
-                        format!("{}{}", crate::constant::BAD_REQUEST.to_string(), err).as_bytes(),
-                    )
+                return stream
+                    .write_all(format!("{}{}", crate::constant::BAD_REQUEST, err).as_bytes())
                     .await
-                    .context("error write")?);
+                    .context("error write");
             }
         };
         println!("{:#?}", request);
@@ -45,14 +43,7 @@ impl Server {
                 .unwrap(),
             _ => {
                 stream
-                    .write_all(
-                        format!(
-                            "{}{}",
-                            constant::NOT_FOUND.to_string(),
-                            "404 Not Found".to_string()
-                        )
-                        .as_bytes(),
-                    )
+                    .write_all(format!("{}{}", constant::NOT_FOUND, "404 Not Found").as_bytes())
                     .await?;
             }
         };
