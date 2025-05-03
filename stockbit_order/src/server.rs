@@ -1,8 +1,9 @@
 use anyhow::{Context, Result};
-use tokio::io::AsyncWriteExt;
+use request_http_parser::parser::{Method::GET, Request};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
-use crate::req::{Method::GET, Request};
+use crate::constant::BAD_REQUEST;
 use crate::{constant, socket};
 
 pub struct Server {}
@@ -24,17 +25,37 @@ impl Server {
     }
 
     async fn handle_client(mut stream: TcpStream) -> Result<()> {
-        let (reader, _) = stream.split();
-        let request = match Request::new(reader).await {
+        let (mut reader, mut writer) = stream.split();
+
+        let mut buffer = [0; 1024];
+        let size = reader
+            .read(&mut buffer)
+            .await
+            .context("Failed to read stream")?;
+        if size >= 1024 {
+            let _ = writer
+                .write_all(format!("{}{}", BAD_REQUEST, "Requets too large").as_bytes())
+                .await
+                .context("Failed to write");
+
+            let _ = writer.flush().await.context("Failed to flush");
+
+            return Ok(());
+        }
+        let req_str = String::from_utf8_lossy(&buffer[..size]);
+        let request = match Request::new(&req_str) {
             Ok(req) => req,
-            Err(err) => {
-                return stream
-                    .write_all(format!("{}{}", crate::constant::BAD_REQUEST, err).as_bytes())
+            Err(e) => {
+                println!("{}", e);
+                let _ = writer
+                    .write_all(format!("{}{}", BAD_REQUEST, e).as_bytes())
                     .await
-                    .context("error write");
+                    .context("Failed to write");
+
+                let _ = writer.flush().await.context("Failed to flush");
+                return Ok(());
             }
         };
-        println!("{:#?}", request);
 
         //Router
         match (&request.method, request.path.as_str()) {

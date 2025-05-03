@@ -2,7 +2,14 @@ use std::collections::HashMap;
 
 use base64::Engine;
 use base64::engine::general_purpose;
+use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
+
+pub fn des_from_str<T: for<'a> Deserialize<'a> + Serialize>(
+    string: &str,
+) -> Result<T, serde_json::Error> {
+    serde_json::from_str(string)
+}
 
 // Generate "Sec-WebSocket-Accept" key using SHA-1 + Base64
 pub fn generate_accept_key(key: &str) -> String {

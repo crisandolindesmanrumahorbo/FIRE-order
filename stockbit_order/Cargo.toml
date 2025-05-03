@@ -9,6 +9,7 @@ jsonwebtoken = "9.3.1"
 rsa = "0.9.7"
 sha1 = "0.10.6"
 serde = "1.0.218"
+serde_json = "1.0.140"
 dotenvy = "0.15.7"
 auth_validate = { path = "../shared/auth_validate" }
 thread_pool = { path = "../shared/thread_pool" }
@@ -16,3 +17,8 @@ tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 anyhow = { version = "1.0", default-features = false }
+chrono = { version = "0.4.40", features = ["serde"] }
+sqlx = { version = "0.8", features = ["postgres", "runtime-tokio", "chrono"] }
+request-http-parser = "0.1.1"
+config = "0.15.11"
+
