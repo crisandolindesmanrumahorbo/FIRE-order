@@ -9,7 +9,6 @@ CREATE TABLE orders (
   created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
   user_id INT NOT NULL,
   product_id INT NOT NULL,
-  FOREIGN KEY (user_id) REFERENCES users(user_id)
+  FOREIGN KEY (user_id) REFERENCES users(user_id),
   FOREIGN KEY (product_id) REFERENCES products(product_id)
-  CONSTRAINT unique_user_product UNIQUE (user_id, product_id)
 );
