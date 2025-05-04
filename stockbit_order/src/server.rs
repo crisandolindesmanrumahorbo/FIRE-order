@@ -1,30 +1,59 @@
 use anyhow::{Context, Result};
 use request_http_parser::parser::{Method::GET, Request};
+use sqlx::{Pool, Postgres};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::oneshot::Receiver;
 
 use crate::constant::BAD_REQUEST;
+use crate::order::repo::OrderRepo;
+use crate::product::repo::ProductRepository;
 use crate::{constant, socket};
+use std::sync::Arc;
 
-pub struct Server {}
+pub struct Server {
+    product_repo: Arc<ProductRepository>,
+    order_repo: Arc<OrderRepo>,
+}
 
 impl Server {
-    pub async fn start() {
+    pub fn new(pool: Pool<Postgres>) -> Self {
+        Self {
+            product_repo: Arc::new(ProductRepository::new(pool.clone())),
+            order_repo: Arc::new(OrderRepo::new(pool.clone())),
+        }
+    }
+    pub async fn start(self, mut shutdown_rx: Receiver<()>) -> anyhow::Result<()> {
         let listener = TcpListener::bind("127.0.0.1:7878").await.unwrap();
         println!("Server running on http://127.0.0.1:7878");
 
         loop {
-            let (stream, _) = listener.accept().await.unwrap();
-            tokio::spawn(async move {
-                crate::logging::thread_logging(crate::constant::LOGGING_INCOMING_REQUEST);
-                if let Err(e) = Self::handle_client(stream).await {
-                    eprintln!("Connection error: {}", e);
+            tokio::select! {
+                conn = listener.accept() => {
+                    let ( stream, _) = conn?;
+                    let product_repo = Arc::clone(&self.product_repo);
+                    let order_repo = Arc::clone(&self.order_repo);
+                    tokio::spawn(async move {
+                        crate::logging::thread_logging(crate::constant::LOGGING_INCOMING_REQUEST);
+                        if let Err(e) = Self::handle_client(stream, &product_repo, &order_repo).await {
+                            eprintln!("Connection error: {}", e);
+                        }
+                });
+                },
+                _ = &mut shutdown_rx => {
+                    println!("shutting down ...");
+                    break;
                 }
-            });
+            }
         }
+        Ok(())
     }
 
-    async fn handle_client(mut stream: TcpStream) -> Result<()> {
+    async fn handle_client(
+        mut stream: TcpStream,
+        product_repo: &Arc<ProductRepository>,
+        order_repo: &Arc<OrderRepo>,
+    ) -> Result<()> {
         let (mut reader, mut writer) = stream.split();
 
         let mut buffer = [0; 1024];
@@ -59,9 +88,11 @@ impl Server {
 
         //Router
         match (&request.method, request.path.as_str()) {
-            (GET, "/order/ws") => socket::handle_websocket(request, &mut stream)
-                .await
-                .unwrap(),
+            (GET, "/order/ws") => {
+                socket::handle_websocket(request, product_repo, order_repo, &mut stream)
+                    .await
+                    .unwrap()
+            }
             _ => {
                 stream
                     .write_all(format!("{}{}", constant::NOT_FOUND, "404 Not Found").as_bytes())

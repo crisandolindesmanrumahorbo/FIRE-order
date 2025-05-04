@@ -1,5 +1,6 @@
 pub mod cfg;
 pub mod constant;
+pub mod db;
 pub mod logging;
 pub mod order;
 pub mod product;

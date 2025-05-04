@@ -1,16 +1,22 @@
+use crate::cfg::CONFIG;
 use crate::constant::{LOGGING_HANDSHAKE, LOGGING_MESSAGE, UNAUTHORIZED};
 use crate::logging::thread_logging;
 use crate::order::model::{Order, OrderForm};
+use crate::order::repo::OrderRepo;
+use crate::product::repo::ProductRepository;
 use crate::utils;
 use auth_validate::jwt::verify_jwt;
 use request_http_parser::parser::Request;
 use std::error::Error;
+use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tracing::info;
 
 pub async fn handle_websocket(
     request: Request,
+    product_repo: &Arc<ProductRepository>,
+    order_repo: &Arc<OrderRepo>,
     stream: &mut TcpStream,
 ) -> Result<(), Box<dyn Error>> {
     if let Some(user_id) = verify_token(&request) {
@@ -31,7 +37,7 @@ pub async fn handle_websocket(
 
         thread_logging(LOGGING_HANDSHAKE);
         // Start handling WebSocket messages
-        handle_message(stream, user_id).await;
+        handle_message(stream, user_id, product_repo, order_repo).await;
 
         info!("Closing connection...");
         let _ = stream.shutdown().await;
@@ -67,45 +73,22 @@ fn verify_token(request: &Request) -> Option<String> {
             return None;
         }
     };
-    match verify_jwt(&token) {
+    match verify_jwt(&token, &CONFIG.jwt_public_key) {
         Ok(user_id) => Some(user_id),
         Err(err) => {
             info!("Verification failed: {}", err);
             None
         }
     }
-
-    // request
-    //     .params
-    //     .as_ref()
-    //     .and_then(|params| params.get("token"))
-    //     .map(|token| token.to_string())
-    //     .and_then(|token| {
-    //         verify_jwt(&token)
-    //             .map(|_| {
-    //                 let sec_websocket_key =
-    //                     request.headers.get("sec-websocket-key").map_or("", |v| v);
-    //                 let sec_websocket_accept = utils::generate_accept_key(sec_websocket_key);
-    //
-    //                 format!(
-    //                     "HTTP/1.1 101 Switching Protocols\r\n\
-    //                 Upgrade: websocket\r\n\
-    //                 Connection: Upgrade\r\n\
-    //                 Sec-WebSocket-Accept: {}\r\n\
-    //                 \r\n",
-    //                     sec_websocket_accept
-    //                 )
-    //             })
-    //             .map_err(|err| {
-    //                 info!("Verification failed: {}", err);
-    //                 err
-    //             })
-    //             .ok()
-    //     })
 }
 
 // WebSocket message handling loop (Echo messages)
-async fn handle_message(stream: &mut TcpStream, user_id: String) {
+async fn handle_message(
+    stream: &mut TcpStream,
+    user_id: String,
+    product_repo: &Arc<ProductRepository>,
+    order_repo: &Arc<OrderRepo>,
+) {
     loop {
         thread_logging(LOGGING_MESSAGE);
         let mut buffer = [0; 1024];
@@ -122,11 +105,16 @@ async fn handle_message(stream: &mut TcpStream, user_id: String) {
                         /* TODO
                          * get product_id
                          * */
-                        let product_id = 1;
-                        let product_name = String::from("");
-                        let order = Order::new(order_form, &user_id, product_id, product_name)
-                            .expect("parse order");
+                        let product = product_repo
+                            .get_product_by_symbol(&order_form.symbol)
+                            .await
+                            .expect("query error");
+                        let order =
+                            Order::new(order_form, &user_id, product.product_id, product.name)
+                                .expect("parse order");
                         // TODO save order
+                        // send kafka
+                        order_repo.insert(&order).await.expect("error insert");
                         info!("{:?}", order);
                         let response = format!("Echo: {}", order.price);
                         let frame: Vec<u8> = utils::create_websocket_frame(&response);
