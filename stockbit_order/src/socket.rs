@@ -5,6 +5,7 @@ use crate::order::model::{Order, OrderForm};
 use crate::order::repo::OrderRepo;
 use crate::product::repo::ProductRepository;
 use crate::utils;
+use crate::utils::ser_to_str;
 use auth_validate::jwt::verify_jwt;
 use request_http_parser::parser::Request;
 use std::error::Error;
@@ -12,6 +13,12 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tracing::info;
+
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
+struct Response {
+    pub status: String,
+    pub message: String,
+}
 
 pub async fn handle_websocket(
     request: Request,
@@ -82,7 +89,6 @@ fn verify_token(request: &Request) -> Option<String> {
     }
 }
 
-// WebSocket message handling loop (Echo messages)
 async fn handle_message(
     stream: &mut TcpStream,
     user_id: String,
@@ -102,9 +108,6 @@ async fn handle_message(
                 info!("Received WebSocket message: {}", message);
                 match utils::des_from_str::<OrderForm>(&message) {
                     Ok(order_form) => {
-                        /* TODO
-                         * get product_id
-                         * */
                         let product = product_repo
                             .get_product_by_symbol(&order_form.symbol)
                             .await
@@ -112,16 +115,27 @@ async fn handle_message(
                         let order =
                             Order::new(order_form, &user_id, product.product_id, product.name)
                                 .expect("parse order");
-                        // TODO save order
                         // send kafka
-                        order_repo.insert(&order).await.expect("error insert");
+                        let order_id = order_repo.insert(&order).await.expect("error insert");
                         info!("{:?}", order);
-                        let response = format!("Echo: {}", order.price);
-                        let frame: Vec<u8> = utils::create_websocket_frame(&response);
+                        let response = Response {
+                            status: String::from("ok"),
+                            message: order_id.to_string(),
+                        };
+                        let response_json =
+                            ser_to_str(&response).expect("Error serialize response");
+                        let frame: Vec<u8> = utils::create_websocket_frame(&response_json);
                         stream.write_all(&frame).await.expect("err write response")
                     }
                     Err(_) => {
-                        let frame: Vec<u8> = utils::create_websocket_frame("Order failed");
+                        let response = Response {
+                            status: String::from("error"),
+                            message: chrono::Utc::now().to_string(),
+                        };
+                        let response_json =
+                            ser_to_str(&response).expect("Error serialize response");
+
+                        let frame: Vec<u8> = utils::create_websocket_frame(&response_json);
                         stream.write_all(&frame).await.expect("err write response")
                     }
                 };
