@@ -17,6 +17,18 @@ pub fn ser_to_str<T: for<'a> Deserialize<'a> + Serialize>(
     serde_json::to_string(t)
 }
 
+pub fn extract_token(
+    headers: &std::collections::HashMap<std::string::String, std::string::String>,
+) -> Option<String> {
+    headers.get("authorization").and_then(|s| {
+        let mut parts = s.split_whitespace();
+        match (parts.next(), parts.next()) {
+            (Some("Bearer"), Some(token)) => Some(token.to_string()),
+            _ => None,
+        }
+    })
+}
+
 // Generate "Sec-WebSocket-Accept" key using SHA-1 + Base64
 pub fn generate_accept_key(key: &str) -> String {
     let magic_string = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";

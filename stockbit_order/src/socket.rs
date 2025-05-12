@@ -1,11 +1,8 @@
 use crate::cfg::CONFIG;
 use crate::constant::{LOGGING_HANDSHAKE, LOGGING_MESSAGE, UNAUTHORIZED};
 use crate::logging::thread_logging;
-use crate::order::model::{Order, OrderForm};
-use crate::order::repo::OrderRepo;
-use crate::product::repo::ProductRepository;
+use crate::svc::Service;
 use crate::utils;
-use crate::utils::ser_to_str;
 use auth_validate::jwt::verify_jwt;
 use request_http_parser::parser::Request;
 use std::error::Error;
@@ -22,8 +19,7 @@ struct Response {
 
 pub async fn handle_websocket(
     request: Request,
-    product_repo: &Arc<ProductRepository>,
-    order_repo: &Arc<OrderRepo>,
+    svc: &Arc<Service>,
     stream: &mut TcpStream,
 ) -> Result<(), Box<dyn Error>> {
     if let Some(user_id) = verify_token(&request) {
@@ -44,7 +40,7 @@ pub async fn handle_websocket(
 
         thread_logging(LOGGING_HANDSHAKE);
         // Start handling WebSocket messages
-        handle_message(stream, user_id, product_repo, order_repo).await;
+        handle_message(stream, user_id, svc).await;
 
         info!("Closing connection...");
         let _ = stream.shutdown().await;
@@ -89,12 +85,7 @@ fn verify_token(request: &Request) -> Option<String> {
     }
 }
 
-async fn handle_message(
-    stream: &mut TcpStream,
-    user_id: String,
-    product_repo: &Arc<ProductRepository>,
-    order_repo: &Arc<OrderRepo>,
-) {
+async fn handle_message(stream: &mut TcpStream, user_id: String, svc: &Arc<Service>) {
     loop {
         thread_logging(LOGGING_MESSAGE);
         let mut buffer = [0; 1024];
@@ -106,39 +97,7 @@ async fn handle_message(
 
             if let Some(message) = utils::parse_websocket_framev2(&buffer[..bytes_read]) {
                 info!("Received WebSocket message: {}", message);
-                match utils::des_from_str::<OrderForm>(&message) {
-                    Ok(order_form) => {
-                        let product = product_repo
-                            .get_product_by_symbol(&order_form.symbol)
-                            .await
-                            .expect("query error");
-                        let order =
-                            Order::new(order_form, &user_id, product.product_id, product.name)
-                                .expect("parse order");
-                        // send kafka
-                        let order_id = order_repo.insert(&order).await.expect("error insert");
-                        info!("{:?}", order);
-                        let response = Response {
-                            status: String::from("ok"),
-                            message: order_id.to_string(),
-                        };
-                        let response_json =
-                            ser_to_str(&response).expect("Error serialize response");
-                        let frame: Vec<u8> = utils::create_websocket_frame(&response_json);
-                        stream.write_all(&frame).await.expect("err write response")
-                    }
-                    Err(_) => {
-                        let response = Response {
-                            status: String::from("error"),
-                            message: chrono::Utc::now().to_string(),
-                        };
-                        let response_json =
-                            ser_to_str(&response).expect("Error serialize response");
-
-                        let frame: Vec<u8> = utils::create_websocket_frame(&response_json);
-                        stream.write_all(&frame).await.expect("err write response")
-                    }
-                };
+                svc.create_order(&message, stream, &user_id).await;
             } else {
                 info!("WebSocket connection closing...");
                 break;

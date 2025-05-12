@@ -6,4 +6,5 @@ pub mod order;
 pub mod product;
 pub mod server;
 pub mod socket;
+pub mod svc;
 pub mod utils;
