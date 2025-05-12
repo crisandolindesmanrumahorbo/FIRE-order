@@ -1,5 +1,5 @@
-use super::model::Order;
-use anyhow::Result;
+use super::model::{Order, Orders};
+use anyhow::{Ok, Result};
 use sqlx::Postgres;
 
 #[derive(Clone)]
@@ -31,5 +31,18 @@ impl OrderRepo {
         .fetch_one(&self.pool)
         .await?;
         Ok(row.0 as i32)
+    }
+
+    pub async fn get_all_by_user_id(&self, user_id: &str) -> Result<Vec<Orders>> {
+        // TODO
+        // price in database is decimal but in our rust its i32, consider 1 type
+        let orders = sqlx::query_as::<_, Orders>(
+            r#"SELECT product_symbol, product_name, side, price::integer as price,
+                lot, expiry, created_at FROM orders WHERE user_id = $1"#,
+        )
+        .bind(user_id.parse::<i32>().expect("error parse user_id"))
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(orders)
     }
 }

@@ -47,6 +47,19 @@ pub struct OrderForm {
     pub expiry: String,
 }
 
+#[derive(Serialize, Deserialize, sqlx::FromRow)]
+pub struct Orders {
+    #[sqlx(rename = "product_symbol")]
+    pub symbol: String,
+    #[sqlx(rename = "product_name")]
+    pub name: String,
+    pub side: String,
+    pub price: i32,
+    pub lot: i32,
+    pub expiry: String,
+    pub created_at: DateTime<Utc>,
+}
+
 #[derive(Debug, PartialEq, Deserialize, Serialize)]
 pub enum Expiry {
     GTC,
