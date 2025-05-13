@@ -87,8 +87,11 @@ impl Server {
         match (&request.method, request.path.as_str()) {
             (GET, "/order/ws") => socket::handle_websocket(request, svc, &mut stream)
                 .await
-                .unwrap(),
-            (GET, "/order") => svc.get_orders(request, &mut stream).await.unwrap(),
+                .expect("error handle ws"),
+            (GET, "/order") => svc
+                .get_orders(request, &mut stream)
+                .await
+                .expect("error get orders"),
             _ => {
                 stream
                     .write_all(format!("{}{}", constant::NOT_FOUND, "404 Not Found").as_bytes())
