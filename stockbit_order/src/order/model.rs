@@ -18,21 +18,21 @@ pub struct Order {
 
 impl Order {
     pub fn new(
-        order_form: OrderForm,
-        user_id: &str,
+        order_form: &OrderForm,
+        user_id: i32,
         product_id: i32,
-        product_name: String,
+        product_name: &str,
     ) -> Result<Order, anyhow::Error> {
         Ok(Self {
             order_id: None,
-            product_symbol: order_form.symbol,
-            product_name,
+            product_symbol: order_form.symbol.to_string(),
+            product_name: product_name.to_string(),
             side: order_form.side,
             price: order_form.price as i32,
             lot: order_form.lot as i32,
             expiry: order_form.expiry.as_str().try_into()?,
             created_at: Utc::now(),
-            user_id: user_id.parse::<i32>().unwrap(),
+            user_id,
             product_id,
         })
     }

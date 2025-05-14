@@ -5,8 +5,10 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::oneshot::Receiver;
 
+use crate::account::repo::AccountRepo;
 use crate::constant::BAD_REQUEST;
 use crate::order::repo::OrderRepo;
+use crate::portfolio::repo::PortoRepo;
 use crate::product::repo::ProductRepository;
 use crate::svc::Service;
 use crate::{constant, socket};
@@ -22,6 +24,8 @@ impl Server {
             svc: Arc::new(Service::new(
                 ProductRepository::new(pool.clone()),
                 OrderRepo::new(pool.clone()),
+                AccountRepo::new(pool.clone()),
+                PortoRepo::new(pool.clone()),
             )),
         }
     }
