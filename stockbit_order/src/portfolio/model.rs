@@ -54,3 +54,12 @@ impl GetPortfolio {
         }
     }
 }
+
+#[derive(Serialize, Deserialize, sqlx::FromRow, Debug)]
+pub struct Portfolios {
+    pub lot: i32,
+    pub invested_value: i64,
+    pub avg_price: Decimal,
+    pub product_name: String,
+    pub product_symbol: String,
+}

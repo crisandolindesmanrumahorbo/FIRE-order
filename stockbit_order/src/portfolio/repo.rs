@@ -1,4 +1,4 @@
-use super::model::{GetPortfolio, Portfolio};
+use super::model::{GetPortfolio, Portfolio, Portfolios};
 use anyhow::Result;
 use sqlx::Postgres;
 
@@ -55,5 +55,16 @@ impl PortoRepo {
         .fetch_one(&self.pool)
         .await?;
         Ok(row.0)
+    }
+
+    pub async fn get_all_by_user_id(&self, user_id: i32) -> Result<Vec<Portfolios>> {
+        let portfolios = sqlx::query_as::<_, Portfolios>(
+            r#"SELECT lot, invested_value, avg_price, product_name, product_symbol 
+            FROM portfolios WHERE user_id = $1"#,
+        )
+        .bind(user_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(portfolios)
     }
 }
