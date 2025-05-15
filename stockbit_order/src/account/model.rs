@@ -35,3 +35,9 @@ impl GetAccount {
         }
     }
 }
+
+#[derive(Serialize, Deserialize, sqlx::FromRow, Debug)]
+pub struct GetAccountDTO {
+    pub balance: i64,
+    pub invested_value: i64,
+}

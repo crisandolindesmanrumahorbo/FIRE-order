@@ -1,11 +1,9 @@
-use crate::cfg::CONFIG;
-use crate::constant::{LOGGING_HANDSHAKE, LOGGING_MESSAGE, UNAUTHORIZED};
+use crate::constant::{LOGGING_HANDSHAKE, LOGGING_MESSAGE};
 use crate::logging::thread_logging;
 use crate::svc::Service;
 use crate::utils;
-use auth_validate::jwt::verify_jwt;
+use anyhow::Result;
 use request_http_parser::parser::Request;
-use std::error::Error;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -19,73 +17,38 @@ struct Response {
 
 pub async fn handle_websocket(
     request: Request,
+    user_id: i32,
     svc: &Arc<Service>,
     stream: &mut TcpStream,
-) -> Result<(), Box<dyn Error>> {
-    if let Some(user_id) = verify_token(&request) {
-        // handshake success
-        let sec_websocket_key = request.headers.get("sec-websocket-key").map_or("", |v| v);
-        let sec_websocket_accept = utils::generate_accept_key(sec_websocket_key);
-        // Send WebSocket handshake response
-        let response = format!(
-            "HTTP/1.1 101 Switching Protocols\r\n\
+) -> Result<()> {
+    // handshake success
+    let sec_websocket_key = request.headers.get("sec-websocket-key").map_or("", |v| v);
+    let sec_websocket_accept = utils::generate_accept_key(sec_websocket_key);
+    // Send WebSocket handshake response
+    let response = format!(
+        "HTTP/1.1 101 Switching Protocols\r\n\
                     Upgrade: websocket\r\n\
                     Connection: Upgrade\r\n\
                     Sec-WebSocket-Accept: {}\r\n\
                     \r\n",
-            sec_websocket_accept
-        );
-        stream.write_all(response.as_bytes()).await?;
-        stream.flush().await?;
+        sec_websocket_accept
+    );
+    stream
+        .write_all(response.as_bytes())
+        .await
+        .expect("error send handshake success");
+    stream.flush().await.expect("error flush");
 
-        thread_logging(LOGGING_HANDSHAKE);
-        // Start handling WebSocket messages
-        handle_message(stream, user_id, svc).await;
+    thread_logging(LOGGING_HANDSHAKE);
+    // Start handling WebSocket messages
+    handle_message(stream, user_id, svc).await;
 
-        info!("Closing connection...");
-        let _ = stream.shutdown().await;
-        Ok(())
-    } else {
-        info!("WebSocket handshake failed!");
-        stream
-            .write_all(
-                format!(
-                    "{}{}",
-                    UNAUTHORIZED.to_string(),
-                    "401 unathorized".to_string()
-                )
-                .as_bytes(),
-            )
-            .await?;
-        Ok(())
-    }
+    info!("Closing connection...");
+    let _ = stream.shutdown().await;
+    Ok(())
 }
 
-fn verify_token(request: &Request) -> Option<String> {
-    info!("Client is requesting WebSocket connection");
-    let token = match &request.params {
-        Some(params) => match params.get("token") {
-            Some(token) => token.to_string(),
-            None => {
-                info!("Token from params Error");
-                return None;
-            }
-        },
-        None => {
-            info!("Params Error");
-            return None;
-        }
-    };
-    match verify_jwt(&token, &CONFIG.jwt_public_key) {
-        Ok(user_id) => Some(user_id),
-        Err(err) => {
-            info!("Verification failed: {}", err);
-            None
-        }
-    }
-}
-
-async fn handle_message(stream: &mut TcpStream, user_id: String, svc: &Arc<Service>) {
+async fn handle_message(stream: &mut TcpStream, user_id: i32, svc: &Arc<Service>) {
     loop {
         thread_logging(LOGGING_MESSAGE);
         let mut buffer = [0; 1024];
@@ -97,7 +60,7 @@ async fn handle_message(stream: &mut TcpStream, user_id: String, svc: &Arc<Servi
 
             if let Some(message) = utils::parse_websocket_framev2(&buffer[..bytes_read]) {
                 info!("Received WebSocket message: {}", message);
-                svc.create_order(&message, stream, &user_id).await;
+                svc.create_order(&message, stream, user_id).await;
             } else {
                 info!("WebSocket connection closing...");
                 break;

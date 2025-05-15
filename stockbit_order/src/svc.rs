@@ -1,26 +1,27 @@
 use anyhow::Result;
-use auth_validate::jwt::verify_jwt;
 use request_http_parser::parser::Request;
 use rust_decimal::Decimal;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 use tracing::info;
 
 use crate::{
-    account::{model::GetAccount, repo::AccountRepo},
-    cfg::CONFIG,
+    account::{
+        model::{GetAccount, GetAccountDTO},
+        repo::AccountRepo,
+    },
     constant::{OK_RESPONSE, UNAUTHORIZED},
     order::{
         model::{Order, OrderForm, Orders},
         repo::OrderRepo,
     },
     portfolio::{
-        model::{GetPortfolio, Portfolio},
+        model::{GetPortfolio, Portfolio, Portfolios},
         repo::PortoRepo,
     },
     product::repo::ProductRepository,
-    utils::{self, extract_token, ser_to_str},
+    utils::{self, ser_to_str},
 };
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
@@ -52,8 +53,7 @@ impl Service {
         }
     }
 
-    pub async fn create_order(&self, message: &str, stream: &mut TcpStream, user_id_str: &str) {
-        let user_id = user_id_str.parse::<i32>().expect("user id parse error");
+    pub async fn create_order(&self, message: &str, stream: &mut TcpStream, user_id: i32) {
         match utils::des_from_str::<OrderForm>(message) {
             Ok(order_form) => {
                 let product = self
@@ -169,47 +169,17 @@ impl Service {
         };
     }
 
-    pub async fn get_orders(&self, request: Request, stream: &mut TcpStream) -> Result<()> {
-        let token = match extract_token(&request.headers) {
-            Some(token) => token,
-            None => {
-                info!("error extract_token");
-                stream
-                    .write_all(
-                        format!(
-                            "{}{}",
-                            UNAUTHORIZED.to_string(),
-                            "401 unathorized".to_string()
-                        )
-                        .as_bytes(),
-                    )
-                    .await?;
-                return Ok(());
-            }
-        };
-        let user_id = match verify_jwt(&token, &CONFIG.jwt_public_key) {
-            Ok(user_id) => user_id,
-            Err(_) => {
-                info!("error verify_jwt");
-                stream
-                    .write_all(
-                        format!(
-                            "{}{}",
-                            UNAUTHORIZED.to_string(),
-                            "401 unathorized".to_string()
-                        )
-                        .as_bytes(),
-                    )
-                    .await?;
-                return Ok(());
-            }
-        };
-
-        let orders: Vec<Orders> = match self.order_repo.get_all_by_user_id(&user_id).await {
+    pub async fn get_orders(
+        &self,
+        _request: Request,
+        user_id: i32,
+        mut writer: impl AsyncWrite + Unpin,
+    ) -> Result<()> {
+        let orders: Vec<Orders> = match self.order_repo.get_all_by_user_id(user_id).await {
             Ok(orders) => orders,
             Err(e) => {
                 info!("error {}", e);
-                stream
+                writer
                     .write_all(
                         format!(
                             "{}{}",
@@ -227,7 +197,80 @@ impl Service {
             message: orders,
         };
         let response_json = ser_to_str(&response).expect("Error serialize response");
-        stream
+        writer
+            .write_all(format!("{}{}", OK_RESPONSE.to_string(), response_json).as_bytes())
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn get_portfolios(
+        &self,
+        _request: Request,
+        user_id: i32,
+        mut writer: impl AsyncWrite + Unpin,
+    ) -> Result<()> {
+        let portfolios: Vec<Portfolios> = match self.porto_repo.get_all_by_user_id(user_id).await {
+            Ok(portfolios) => portfolios,
+            Err(e) => {
+                info!("error {}", e);
+                writer
+                    .write_all(
+                        format!(
+                            "{}{}",
+                            UNAUTHORIZED.to_string(),
+                            "401 unathorized".to_string()
+                        )
+                        .as_bytes(),
+                    )
+                    .await?;
+                return Ok(());
+            }
+        };
+        let response = Response {
+            status: String::from("ok"),
+            message: portfolios,
+        };
+        let response_json = ser_to_str(&response).expect("Error serialize response");
+        writer
+            .write_all(format!("{}{}", OK_RESPONSE.to_string(), response_json).as_bytes())
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn get_account(
+        &self,
+        _request: Request,
+        user_id: i32,
+        mut writer: impl AsyncWrite + Unpin,
+    ) -> Result<()> {
+        let account = match self.account_repo.get_account_by_user_id(user_id).await {
+            Ok(account) => GetAccountDTO {
+                balance: account.balance,
+                invested_value: account.invested_value,
+            },
+            Err(e) => {
+                info!("error {}", e);
+                writer
+                    .write_all(
+                        format!(
+                            "{}{}",
+                            UNAUTHORIZED.to_string(),
+                            "401 unathorized".to_string()
+                        )
+                        .as_bytes(),
+                    )
+                    .await?;
+                return Ok(());
+            }
+        };
+        let response = Response {
+            status: String::from("ok"),
+            message: account,
+        };
+        let response_json = ser_to_str(&response).expect("Error serialize response");
+        writer
             .write_all(format!("{}{}", OK_RESPONSE.to_string(), response_json).as_bytes())
             .await?;
 

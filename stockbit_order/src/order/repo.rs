@@ -33,14 +33,14 @@ impl OrderRepo {
         Ok(row.0 as i32)
     }
 
-    pub async fn get_all_by_user_id(&self, user_id: &str) -> Result<Vec<Orders>> {
+    pub async fn get_all_by_user_id(&self, user_id: i32) -> Result<Vec<Orders>> {
         // TODO
         // price in database is decimal but in our rust its i32, consider 1 type
         let orders = sqlx::query_as::<_, Orders>(
             r#"SELECT product_symbol, product_name, side, price::integer as price,
                 lot, expiry, created_at FROM orders WHERE user_id = $1"#,
         )
-        .bind(user_id.parse::<i32>().expect("error parse user_id"))
+        .bind(user_id)
         .fetch_all(&self.pool)
         .await?;
         Ok(orders)

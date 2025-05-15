@@ -1,12 +1,14 @@
-use anyhow::{Context, Result};
-use request_http_parser::parser::{Method::GET, Request};
+use anyhow::Result;
+
+use request_http_parser::parser::Method::GET;
 use sqlx::{Pool, Postgres};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::oneshot::Receiver;
+use tracing::info;
 
 use crate::account::repo::AccountRepo;
-use crate::constant::BAD_REQUEST;
+use crate::mdw::Middleware;
 use crate::order::repo::OrderRepo;
 use crate::portfolio::repo::PortoRepo;
 use crate::product::repo::ProductRepository;
@@ -55,47 +57,33 @@ impl Server {
     }
 
     async fn handle_client(mut stream: TcpStream, svc: &Arc<Service>) -> Result<()> {
-        let (mut reader, mut writer) = stream.split();
-
-        let mut buffer = [0; 1024];
-        let size = reader
-            .read(&mut buffer)
-            .await
-            .context("Failed to read stream")?;
-        if size >= 1024 {
-            let _ = writer
-                .write_all(format!("{}{}", BAD_REQUEST, "Requets too large").as_bytes())
-                .await
-                .context("Failed to write");
-
-            let _ = writer.flush().await.context("Failed to flush");
-
-            return Ok(());
-        }
-        let req_str = String::from_utf8_lossy(&buffer[..size]);
-        let request = match Request::new(&req_str) {
-            Ok(req) => req,
+        let (request, user_id) = match Middleware::new(&mut stream).await {
+            Ok((request, user_id)) => (request, user_id),
             Err(e) => {
-                println!("{}", e);
-                let _ = writer
-                    .write_all(format!("{}{}", BAD_REQUEST, e).as_bytes())
-                    .await
-                    .context("Failed to write");
-
-                let _ = writer.flush().await.context("Failed to flush");
+                info!("error {}", e);
                 return Ok(());
             }
         };
+        let (_, mut writer) = stream.split();
 
         //Router
         match (&request.method, request.path.as_str()) {
-            (GET, "/order/ws") => socket::handle_websocket(request, svc, &mut stream)
+            (GET, "/order/ws") => socket::handle_websocket(request, user_id, svc, &mut stream)
                 .await
                 .expect("error handle ws"),
             (GET, "/order") => svc
-                .get_orders(request, &mut stream)
+                .get_orders(request, user_id, &mut writer)
                 .await
                 .expect("error get orders"),
+            (GET, "/portfolio") => svc
+                .get_portfolios(request, user_id, &mut writer)
+                .await
+                .expect("error get portfolios"),
+            (GET, "/account") => svc
+                .get_account(request, user_id, &mut writer)
+                .await
+                .expect("error get account"),
+
             _ => {
                 stream
                     .write_all(format!("{}{}", constant::NOT_FOUND, "404 Not Found").as_bytes())
