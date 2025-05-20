@@ -1,4 +1,4 @@
-use anyhow::{Context, Error, Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use auth_validate::jwt::verify_jwt;
 use request_http_parser::parser::Request;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -11,7 +11,7 @@ use crate::utils::extract_token;
 pub struct Middleware {}
 
 impl Middleware {
-    pub async fn new(stream: &mut TcpStream) -> Result<(Request, i32), Error> {
+    pub async fn new(stream: &mut TcpStream) -> Result<(Request, i32)> {
         let mut buffer = [0; 1024];
         let size = stream
             .read(&mut buffer)

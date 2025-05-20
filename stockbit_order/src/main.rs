@@ -1,6 +1,6 @@
 use sqlx::Postgres;
 use std::error::Error;
-use stockbit_order_ws::{cfg::CONFIG, db::Database, server::Server};
+use stockbit_order_ws::{cfg::CONFIG, db::Database, redis::RedisCache, server::Server};
 use tokio::{
     signal::unix::{SignalKind, signal},
     sync::oneshot::{self, Sender},
@@ -14,10 +14,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Init DB
     let db_pool = Database::new_pool(&CONFIG.database_url).await;
+    let redis_conn = RedisCache::new(&CONFIG.redis_url).await?;
 
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
-    let server = Server::new(db_pool.clone());
+    let server = Server::new(db_pool.clone(), redis_conn.clone());
 
     let server_handle = tokio::spawn(async move {
         let _ = server.start(shutdown_rx).await;

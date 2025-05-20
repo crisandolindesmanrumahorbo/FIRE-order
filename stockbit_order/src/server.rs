@@ -12,6 +12,7 @@ use crate::mdw::Middleware;
 use crate::order::repo::OrderRepo;
 use crate::portfolio::repo::PortoRepo;
 use crate::product::repo::ProductRepository;
+use crate::redis::RedisCache;
 use crate::svc::Service;
 use crate::{constant, socket};
 use std::sync::Arc;
@@ -21,13 +22,14 @@ pub struct Server {
 }
 
 impl Server {
-    pub fn new(pool: Pool<Postgres>) -> Self {
+    pub fn new(pool: Pool<Postgres>, redis_cache: RedisCache) -> Self {
         Self {
             svc: Arc::new(Service::new(
                 ProductRepository::new(pool.clone()),
                 OrderRepo::new(pool.clone()),
                 AccountRepo::new(pool.clone()),
                 PortoRepo::new(pool.clone()),
+                redis_cache,
             )),
         }
     }
@@ -72,7 +74,7 @@ impl Server {
                 .await
                 .expect("error handle ws"),
             (GET, "/order") => svc
-                .get_orders(request, user_id, &mut writer)
+                .get_orders(user_id, &mut writer)
                 .await
                 .expect("error get orders"),
             (GET, "/portfolio") => svc

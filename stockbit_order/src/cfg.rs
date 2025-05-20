@@ -4,6 +4,7 @@ use once_cell::sync::Lazy;
 pub struct AppConfig {
     pub jwt_public_key: String,
     pub database_url: String,
+    pub redis_url: String,
 }
 
 // Initialize config once

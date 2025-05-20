@@ -7,6 +7,7 @@ pub mod mdw;
 pub mod order;
 pub mod portfolio;
 pub mod product;
+pub mod redis;
 pub mod server;
 pub mod socket;
 pub mod svc;
