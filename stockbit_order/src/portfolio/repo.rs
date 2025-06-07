@@ -13,6 +13,7 @@ impl PortoRepo {
     }
 
     pub async fn insert(&self, porto: &Portfolio) -> Result<i32> {
+        println!("{:?}", porto);
         let row: (i32,) = sqlx::query_as(
             r#"INSERT INTO portfolios (user_id, product_name, product_symbol, 
                 invested_value, lot, avg_price, product_id)
@@ -27,15 +28,21 @@ impl PortoRepo {
         .bind(&porto.avg_price)
         .bind(&porto.product_id)
         .fetch_one(&self.pool)
-        .await?;
+        .await
+        .expect("error insert porto cukkk");
         Ok(row.0)
     }
 
-    pub async fn get_by_symbol(&self, symbol: &str) -> Result<GetPortfolio, sqlx::Error> {
+    pub async fn get_by_symbol(
+        &self,
+        symbol: &str,
+        user_id: i32,
+    ) -> Result<GetPortfolio, sqlx::Error> {
         sqlx::query_as::<_, GetPortfolio>(
-            r#"SELECT portfolio_id, lot, invested_value, avg_price FROM portfolios WHERE product_symbol = $1"#,
+            r#"SELECT portfolio_id, lot, invested_value, avg_price FROM portfolios WHERE product_symbol = $1 AND user_id = $2"#,
         )
         .bind(symbol)
+            .bind(user_id)
         .fetch_one(&self.pool)
         .await
     }
@@ -53,7 +60,8 @@ impl PortoRepo {
         .bind(&new_porto.avg_price)
         .bind(&new_porto.portfolio_id)
         .fetch_one(&self.pool)
-        .await?;
+        .await
+        .expect("error update");
         Ok(row.0)
     }
 
