@@ -2090,6 +2090,7 @@ dependencies = [
  "serde_json",
  "sha1",
  "sqlx",
+ "thiserror",
  "thread_pool",
  "tokio",
  "tracing",

@@ -1,15 +1,5 @@
-use std::sync::Arc;
-
-use anyhow::Result;
-use request_http_parser::parser::Request;
-use rust_decimal::Decimal;
-use tokio::io::{AsyncWrite, AsyncWriteExt};
-use tokio::net::TcpStream;
-
-use tokio::sync::Mutex;
-use tracing::info;
-
-use crate::constant::BAD_REQUEST;
+use crate::constant::{BAD_REQUEST, INTERNAL_ERROR};
+use crate::error::OrderError;
 use crate::order::model::OrderFormServer;
 use crate::product::model::Product;
 use crate::redis::RedisCache;
@@ -30,6 +20,14 @@ use crate::{
     product::repo::ProductRepository,
     utils::{self, ser_to_str},
 };
+use anyhow::Result;
+use request_http_parser::parser::Request;
+use rust_decimal::Decimal;
+use std::sync::Arc;
+use tokio::io::{AsyncWrite, AsyncWriteExt};
+use tokio::net::TcpStream;
+use tokio::sync::Mutex;
+use tracing::info;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 struct Response<T> {
@@ -62,7 +60,6 @@ impl Service {
             redis_cache: Arc::new(Mutex::new(redis_cache)),
         }
     }
-
     pub async fn create_order(&self, message: &str, stream: &mut TcpStream, user_id: i32) {
         let order_form = match utils::des_from_str::<OrderForm>(message) {
             Ok(order_form) => order_form,
@@ -78,148 +75,23 @@ impl Service {
                 return;
             }
         };
-        let mut format = format!("product:{}", &order_form.symbol);
-        let mut cache = self.redis_cache.lock().await;
-        let product = match cache.get_cached(&format).await {
-            Ok(product) => match product {
-                Some(product) => {
-                    info!("Hit cache {}", &format);
-                    product
-                }
-                None => {
-                    let product = self
-                        .product_repo
-                        .get_product_by_symbol(&order_form.symbol)
-                        .await
-                        .expect("query product error");
-                    let _ = cache.set_cache::<Product>(&format, &product).await;
-                    product
-                }
-            },
+
+        match self.handle_order(order_form, user_id).await {
+            Ok(res) => {
+                let frame: Vec<u8> = utils::create_websocket_frame(&res);
+                stream.write_all(&frame).await.expect("err write response");
+            }
             Err(_) => {
                 let response = Response {
                     status: String::from("error"),
                     message: chrono::Utc::now().to_string(),
                 };
-                let response_json = ser_to_str(&response).expect("Error get product response");
+                let response_json = ser_to_str(&response).expect("Error serialize response");
+
                 let frame: Vec<u8> = utils::create_websocket_frame(&response_json);
                 stream.write_all(&frame).await.expect("err write response");
-                return;
-            }
-        };
-
-        let order = Order::new(&order_form, user_id, product.product_id, &product.name)
-            .expect("parse order");
-        info!("{:?}", order);
-
-        format = format!("account:{}", user_id);
-        let account = match cache.get_cached(&format).await {
-            Ok(account) => match account {
-                Some(account) => {
-                    info!("Hit cache {}", &format);
-                    account
-                }
-                None => {
-                    let account = self
-                        .account_repo
-                        .get_account_by_user_id(user_id)
-                        .await
-                        .expect("query account error");
-                    let _ = cache.set_cache::<GetAccount>(&format, &account).await;
-                    account
-                }
-            },
-            Err(_) => {
-                let response = Response {
-                    status: String::from("error"),
-                    message: chrono::Utc::now().to_string(),
-                };
-                let response_json = ser_to_str(&response).expect("Error get account response");
-                let frame: Vec<u8> = utils::create_websocket_frame(&response_json);
-                stream.write_all(&frame).await.expect("err write response");
-                return;
-            }
-        };
-
-        let exist_porto = match self
-            .porto_repo
-            .get_by_symbol(&order_form.symbol, user_id)
-            .await
-        {
-            Ok(porto) => Some(porto),
-            Err(e) => match e {
-                sqlx::Error::RowNotFound => None,
-                e => {
-                    println!("{:?}", e);
-                    let response = Response {
-                        status: String::from("error"),
-                        message: chrono::Utc::now().to_string(),
-                    };
-                    let response_json = ser_to_str(&response).expect("Error serialize response");
-                    let frame: Vec<u8> = utils::create_websocket_frame(&response_json);
-                    stream.write_all(&frame).await.expect("err write response");
-                    return;
-                }
-            },
-        };
-        let total_order_form = order_form.price * (order_form.lot * 100);
-        match exist_porto {
-            Some(porto) => {
-                let new_lot = porto.lot + order_form.lot as i32;
-                let new_invested_port = porto.invested_value + total_order_form as i64;
-                let order_price: Decimal = order_form.price.into();
-                let order_lot: Decimal = order_form.lot.into();
-                let current_lot: Decimal = porto.lot.into();
-                let new_lot_dec: Decimal = new_lot.into();
-                let order_value = order_price * order_lot;
-                let existing_value = porto.avg_price * current_lot;
-                let total_value = order_value + existing_value;
-                let new_avg_price = total_value / new_lot_dec;
-
-                self.porto_repo
-                    .update(GetPortfolio::new(
-                        porto.portfolio_id,
-                        new_lot,
-                        new_invested_port,
-                        new_avg_price,
-                    ))
-                    .await
-                    .expect("error update porto");
-            }
-            None => {
-                let new_avg_price: Decimal = order_form.price.into();
-                let new = Portfolio::new(
-                    user_id,
-                    product.product_id,
-                    product.name,
-                    product.symbol,
-                    order_form.lot as i32,
-                    total_order_form as i64,
-                    new_avg_price,
-                );
-                self.porto_repo
-                    .insert(&new)
-                    .await
-                    .expect("error insert porto");
             }
         }
-        // send kafka -> prevent error when do order
-        let order_id = self.order_repo.insert(&order).await.expect("error insert");
-        let total = order_form.price * (order_form.lot * 100);
-        let new_balance = &account.balance - total as i64;
-        let new_invested = &account.invested_value + total as i64;
-        let updated = GetAccount::new(new_balance, new_invested, account.account_id);
-        self.account_repo
-            .update_account(&updated)
-            .await
-            .expect("failed update account");
-        let response = Response {
-            status: String::from("ok"),
-            message: order_id.to_string(),
-        };
-        let response_json = ser_to_str(&response).expect("Error serialize response");
-        let frame: Vec<u8> = utils::create_websocket_frame(&response_json);
-        stream.write_all(&frame).await.expect("err write response")
     }
 
     pub async fn get_orders(
@@ -360,6 +232,51 @@ impl Service {
             expiry: order_form_server.expiry,
         };
         let user_id = order_form_server.user_id as i32;
+        match self.handle_order(order_form, user_id).await {
+            Ok(res) => {
+                writer
+                    .write_all(format!("{}{}", OK_RESPONSE.to_string(), res).as_bytes())
+                    .await?;
+            }
+            Err(why) => match why {
+                OrderError::BadRequest => {
+                    writer
+                        .write_all(
+                            format!("{}{}", BAD_REQUEST.to_string(), "".to_string()).as_bytes(),
+                        )
+                        .await?;
+                }
+                OrderError::Serde => {
+                    writer
+                        .write_all(
+                            format!("{}{}", BAD_REQUEST.to_string(), "".to_string()).as_bytes(),
+                        )
+                        .await?;
+                }
+                OrderError::Redis => {
+                    writer
+                        .write_all(
+                            format!("{}{}", INTERNAL_ERROR.to_string(), "".to_string()).as_bytes(),
+                        )
+                        .await?;
+                }
+                OrderError::Database => {
+                    writer
+                        .write_all(
+                            format!("{}{}", INTERNAL_ERROR.to_string(), "".to_string()).as_bytes(),
+                        )
+                        .await?;
+                }
+            },
+        }
+        Ok(())
+    }
+
+    pub async fn handle_order(
+        &self,
+        order_form: OrderForm,
+        user_id: i32,
+    ) -> Result<String, OrderError> {
         let mut format = format!("product:{}", &order_form.symbol);
         let mut cache = self.redis_cache.lock().await;
         let product = match cache.get_cached(&format).await {
@@ -379,10 +296,7 @@ impl Service {
                 }
             },
             Err(_) => {
-                writer
-                    .write_all(format!("{}{}", BAD_REQUEST.to_string(), "".to_string()).as_bytes())
-                    .await?;
-                return Ok(());
+                return Err(OrderError::Redis);
             }
         };
         let order = Order::new(&order_form, user_id, product.product_id, &product.name)
@@ -407,10 +321,7 @@ impl Service {
                 }
             },
             Err(_) => {
-                writer
-                    .write_all(format!("{}{}", BAD_REQUEST.to_string(), "".to_string()).as_bytes())
-                    .await?;
-                return Ok(());
+                return Err(OrderError::Redis);
             }
         };
         let exist_porto = match self
@@ -423,12 +334,7 @@ impl Service {
                 sqlx::Error::RowNotFound => None,
                 e => {
                     println!("{:?}", e);
-                    writer
-                        .write_all(
-                            format!("{}{}", BAD_REQUEST.to_string(), "".to_string()).as_bytes(),
-                        )
-                        .await?;
-                    return Ok(());
+                    return Err(OrderError::Database);
                 }
             },
         };
@@ -488,10 +394,6 @@ impl Service {
             message: order_id.to_string(),
         };
         let response_json = ser_to_str(&response).expect("Error serialize response");
-        writer
-            .write_all(format!("{}{}", OK_RESPONSE.to_string(), response_json).as_bytes())
-            .await?;
-
-        Ok(())
+        Ok(response_json)
     }
 }

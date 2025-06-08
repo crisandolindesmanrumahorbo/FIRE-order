@@ -2,6 +2,7 @@ pub mod account;
 pub mod cfg;
 pub mod constant;
 pub mod db;
+pub mod error;
 pub mod logging;
 pub mod mdw;
 pub mod order;
