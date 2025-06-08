@@ -201,7 +201,7 @@ impl Service {
         Ok(())
     }
 
-    pub async fn create_order_nonws(
+    pub async fn create_internal_order(
         &self,
         request: Request,
         mut writer: impl AsyncWrite + Unpin,
@@ -272,7 +272,7 @@ impl Service {
         Ok(())
     }
 
-    pub async fn handle_order(
+    async fn handle_order(
         &self,
         order_form: OrderForm,
         user_id: i32,

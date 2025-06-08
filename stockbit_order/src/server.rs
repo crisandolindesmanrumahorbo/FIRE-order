@@ -77,7 +77,7 @@ impl Server {
                 .await
                 .expect("error handle ws"),
             (POST, "/order") => svc
-                .create_order_nonws(request, &mut writer)
+                .create_internal_order(request, &mut writer)
                 .await
                 .expect("error create order nonws"),
             (GET, "/order") => svc
