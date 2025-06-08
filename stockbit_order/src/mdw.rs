@@ -1,6 +1,6 @@
 use anyhow::{Context, Result, anyhow};
 use auth_validate::jwt::verify_jwt;
-use request_http_parser::parser::Request;
+use request_http_parser::parser::{Method, Request};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
@@ -41,6 +41,11 @@ impl Middleware {
                 return Err(anyhow!("request format invalid"));
             }
         };
+        // TODO handle non protected path
+        if request.path == "/order" && request.method == Method::POST {
+            return Ok((request, 0));
+        }
+
         let token_opt: Option<String>;
         // ws
         if request.path.contains("ws") {

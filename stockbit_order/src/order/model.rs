@@ -47,6 +47,16 @@ pub struct OrderForm {
     pub expiry: String,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct OrderFormServer {
+    pub symbol: String,
+    pub side: char,
+    pub price: u32,
+    pub lot: u32,
+    pub expiry: String,
+    pub user_id: u32,
+}
+
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
 pub struct Orders {
     #[sqlx(rename = "product_symbol")]

@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use request_http_parser::parser::Method::GET;
+use request_http_parser::parser::{Method::GET, Method::POST};
 use sqlx::{Pool, Postgres};
 use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
@@ -63,6 +63,9 @@ impl Server {
             Ok((request, user_id)) => (request, user_id),
             Err(e) => {
                 info!("error {}", e);
+                stream
+                    .write_all(format!("{}{}", constant::BAD_REQUEST, "").as_bytes())
+                    .await?;
                 return Ok(());
             }
         };
@@ -73,6 +76,10 @@ impl Server {
             (GET, "/order/ws") => socket::handle_websocket(request, user_id, svc, &mut stream)
                 .await
                 .expect("error handle ws"),
+            (POST, "/order") => svc
+                .create_order_nonws(request, &mut writer)
+                .await
+                .expect("error create order nonws"),
             (GET, "/order") => svc
                 .get_orders(user_id, &mut writer)
                 .await
